@@ -1,4 +1,4 @@
-export BitNeighborList
+export BitNeighborList, list_to_bitstring
 
 """
     BitNeighborList
@@ -22,37 +22,43 @@ function list_to_bitstring(l; AT = Array)
     # Step 1: pre-allocate the largest bit list on the CPU.
     #         we will later take a subset for the actual BitNeighborList
 
-    # ceil(log2(length(l))) finds the maximum number of bits to represent
+    # UT = ceil(log2(length(l))) finds the maximum number of bits to represent
     #     each element
     # length(l)^2 is the necessary number of elements for an all-to-all network
-    max_bits = ceil(UInt,ceil(log2(length(l)))*length(l)^2)
+    bitsize = ceil(UInt, log2(length(l)))
+    if bitsize <= 8
+        UT = UInt8
+    elseif bitsize == 16
+        UT = UInt16
+    elseif bitsize == 32
+        UT = UInt32
+    elseif bitsize == 64
+        UT = UInt64
+    elseif bitsize > 64
+        error("Neighborlist cannot be compressed into UInt values")
+    else
+        error("Could not find appropriate size for NeighborList container")
+    end
 
-    # This creates a BitArray to be interpreted into UInt8s
-    max_bitstring = BitArray(zeros(max_bits))
+    max_bitstring = zeros(UT, length(l)^2)
 
-    indices = zeros(Uint, length(l))
+    indices = zeros(UT, length(l))
 
-    offset = 1
+    offset = 0
     for i = 1:length(l)
         indices[i] = offset
-        total_bitnum = 0
+
+        # counter for the inner list 
+        count = 0
         for j = 1:length(l[i])
             # this is the number of bits needed to store the current value
-            bitnum = ceil(UInt, log2(l[i][j]))
-            range = offset+total_bitnum:offset+total_bitnum+bitnum
-            max_bitstring[range] .= trunc(UInt(l[i][j]),bitnum)
-            total_bitnum += bitnum
+            max_bitstring[offset+j] = trunc(UT, UInt(l[i][j]))
+            count += 1
         end
-        offset += ceil(UInt, total_bitnum*0.125)*8
+        offset += count
     end
 
-    final_bitstring = zeros(UInt8, offset * 0.125)
-
-    for i = 1:length(final_bitstring)
-        final_bitstring[i] = UInt8(max_bitstring[(i-1)*8+1:i*8])
-    end
-
-    return BitNeighborList(AT(final_bitstring), AT(indices))
+    return BitNeighborList(AT(max_bitstring[1:offset]), AT(indices))
 end
 
 # This will take an existing NeighborList and compress it to a BitNeighborList
