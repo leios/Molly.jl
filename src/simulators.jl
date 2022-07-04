@@ -129,24 +129,37 @@ function simulate!(sys,
                     sim::VelocityVerlet,
                     n_steps::Integer;
                     parallel::Bool=true)
-    neighbors = find_neighbors(sys, sys.neighbor_finder; parallel=parallel)
-    run_loggers!(sys, neighbors, 0; parallel=parallel)
-    accels_t = accelerations(sys, neighbors; parallel=parallel)
-    accels_t_dt = zero(accels_t)
-    sim.remove_CM_motion && remove_CM_motion!(sys)
 
+    println("startup time:")
+    @time begin
+        CUDA.@time neighbors = find_neighbors(sys, sys.neighbor_finder; parallel=parallel)
+        CUDA.@time run_loggers!(sys, neighbors, 0; parallel=parallel)
+        CUDA.@time accels_t = accelerations(sys, neighbors; parallel=parallel)
+        CUDA.@time accels_t_dt = zero(accels_t)
+        CUDA.@time sim.remove_CM_motion && remove_CM_motion!(sys)
+    end
+
+#=
     for step_n in 1:n_steps
-        sys.coords += sys.velocities .* sim.dt .+ (remove_molar.(accels_t) .* sim.dt ^ 2) ./ 2
-        sys.coords = wrap_coords.(sys.coords, (sys.boundary,))
+        println("step time:")
+        @time begin
+            sys.coords += sys.velocities .* sim.dt .+ (remove_molar.(accels_t) .* sim.dt ^ 2) ./ 2
+            sys.coords = wrap_coords_vec.(sys.coords, (sys.box_size,))
+        end
 
-        accels_t_dt = accelerations(sys, neighbors; parallel=parallel)
+        println("acc time:")
+        @time accels_t_dt .= accelerations(sys, neighbors; parallel=parallel)
 
-        sys.velocities += remove_molar.(accels_t .+ accels_t_dt) .* sim.dt / 2
+        println("stormer verlet time:")
+        @time sys.velocities += remove_molar.(accels_t .+ accels_t_dt) .* sim.dt / 2
 
-        sim.remove_CM_motion && remove_CM_motion!(sys)
-        apply_coupling!(sys, sim, sim.coupling)
+        println("coupling / logging time:")
+        @time begin
+            sim.remove_CM_motion && remove_CM_motion!(sys)
+            apply_coupling!(sys, sim, sim.coupling)
 
-        run_loggers!(sys, neighbors, step_n; parallel=parallel)
+            run_loggers!(sys, neighbors, step_n; parallel=parallel)
+        end
 
         if step_n != n_steps
             neighbors = find_neighbors(sys, sys.neighbor_finder, neighbors, step_n;
@@ -154,6 +167,7 @@ function simulate!(sys,
             accels_t = accels_t_dt
         end
     end
+=#
     return sys
 end
 

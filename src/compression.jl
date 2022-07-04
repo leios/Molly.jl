@@ -1,4 +1,4 @@
-export BitNeighborList,
+export BitNeighborList
 
 """
     BitNeighborList
@@ -56,12 +56,12 @@ function list_to_bitstring(l; AT = Array)
 end
 
 # This will take an existing NeighborList and compress it to a BitNeighborList
-function compress_neighborlist(nl::NeighbotList; AT = Array)
+function compress_neighborlist(nl::NeighborList; AT = Array)
     return list_to_bitstring(nl.list)
 end
 
 # TODO
-function compress_neighborlist(nl::NeighbotListVec; AT = Array)
+function compress_neighborlist(nl::NeighborListVec; AT = Array)
 end
 
 # TODO: This function will create an encoded BitNeighborList from scratch
