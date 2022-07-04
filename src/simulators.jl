@@ -132,11 +132,20 @@ function simulate!(sys,
                     n_steps::Integer;
                     n_threads::Integer=Threads.nthreads())
     sys.coords = wrap_coords.(sys.coords, (sys.boundary,))
-    sim.remove_CM_motion && remove_CM_motion!(sys)
-    neighbors = find_neighbors(sys, sys.neighbor_finder; n_threads=n_threads)
-    run_loggers!(sys, neighbors, 0; n_threads=n_threads)
-    accels_t = accelerations(sys, neighbors; n_threads=n_threads)
-    accels_t_dt = zero(accels_t)
+
+    AT = Array
+    if isa(sys.coords, CuArray)
+        AT = CuArray
+    end
+
+    #accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
+    accels_t = AT(zero(sys.coords))
+
+    neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder; parallel=parallel))
+    run_loggers!(sys, neighbors, 0; parallel=parallel)
+    #accels_t = accelerations(sys, neighbors)
+    wait(forces!(accels_t, sys, neighbors, force))
+    accels_t_dt = AT(zero(accels_t))
 
     for step_n in 1:n_steps
         old_coords = copy(sys.coords)
@@ -145,7 +154,9 @@ function simulate!(sys,
         apply_constraints!(sys, old_coords, sim.dt)
         sys.coords = wrap_coords.(sys.coords, (sys.boundary,))
 
-        accels_t_dt = accelerations(sys, neighbors; n_threads=n_threads)
+        #accels_t_dt = accelerations(sys, neighbors; n_threads=n_threads)
+        wait(forces!(accels_t_dt, sys, neighbors, force))
+        #println(accels_t_dt)
 
         sys.velocities += remove_molar.(accels_t .+ accels_t_dt) .* sim.dt / 2
 
@@ -155,11 +166,14 @@ function simulate!(sys,
         run_loggers!(sys, neighbors, step_n; n_threads=n_threads)
 
         if step_n != n_steps
-            neighbors = find_neighbors(sys, sys.neighbor_finder, neighbors, step_n;
-                                        n_threads=n_threads)
+            neighbors = find_neighbors(sys, sys.neighbor_finder,
+                                       neighbors, step_n;
+                                       n_threads=n_threads)
+            neighbors = compress_neighborlist(neighbors)
             accels_t = accels_t_dt
         end
     end
+
     return sys
 end
 

@@ -303,16 +303,23 @@ function forces(s::System{D, false}, neighbors=nothing;
     return fs * s.force_units
 end
 
+# this is if atoms, coords, etc are CuArrays
 function forces(s::System{D, true}, neighbors=nothing; n_threads::Integer=Threads.nthreads()) where D
     fs = ustrip_vec.(zero(s.coords))
 
+    # find particles without a neighborlist
     pairwise_inters_nonl = filter(inter -> !inter.nl_only, values(s.pairwise_inters))
+
+    # No Neighborlist calculations
     if length(pairwise_inters_nonl) > 0
         fs += forces_inters(pairwise_inters_nonl, s.coords, s.atoms, neighbors.all,
                             s.boundary, s.force_units, false)
     end
 
+    # Find those with a neighborlist
     pairwise_inters_nl = filter(inter -> inter.nl_only, values(s.pairwise_inters))
+
+    # Neighborlist calculation
     if length(pairwise_inters_nl) > 0 && length(neighbors.close.nbsi) > 0
         fs += forces_inters(pairwise_inters_nl, s.coords, s.atoms, neighbors.close,
                             s.boundary, s.force_units, neighbors.close.weights_14)

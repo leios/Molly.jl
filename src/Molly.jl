@@ -31,6 +31,7 @@ using SparseArrays
 using Statistics
 
 include("types.jl")
+include("performance.jl")
 include("cutoffs.jl")
 include("spatial.jl")
 include("force.jl")
@@ -40,6 +41,7 @@ include("interactions/mie.jl")
 include("interactions/coulomb.jl")
 include("interactions/coulomb_reaction_field.jl")
 include("interactions/gravity.jl")
+include("interactions/parallel.jl")
 include("interactions/harmonic_position_restraint.jl")
 include("interactions/harmonic_bond.jl")
 include("interactions/morse_bond.jl")
