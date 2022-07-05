@@ -42,7 +42,7 @@ function list_to_bitstring(l; AT = Array)
 
     max_bitstring = zeros(UT, length(l)^2)
 
-    indices = zeros(UT, length(l))
+    indices = zeros(UT, length(l)+1)
 
     offset = 0
     for i = 1:length(l)
@@ -57,6 +57,8 @@ function list_to_bitstring(l; AT = Array)
         end
         offset += count
     end
+
+    indices[end] = length(l)
 
     return BitNeighborList(AT(max_bitstring[1:offset]), AT(indices))
 end
@@ -79,4 +81,95 @@ end
 function decode_neighborlist(nbs::T, idx_1, idx_2;
                              AT = Array) where T <: Vector{UInt8}
 
+end
+
+function forces!(accelerations,
+                 s::System, neighor::Union{nothing, BitNeighborList},
+                 force_law; numcores = 4; numthreads = 256)
+
+    if isa(s.coords, SVector) || sia(s.coords, Array)
+        kernel! = forces_kernel(CPU(), numcores)
+    else
+        kernel! = forces_kernel(CUDADevice(), numthreads)
+    end
+
+    if neighbor == nothing
+        kernel!(accelerations, s.coords, force_law,
+                ndrange=length(length(s.coords)))
+    else
+        kernel!(accelerations, s.coords, force_law, neighbor.bitstring,
+                neighbor.indices, ndrange=length(length(s.coords)))
+    end
+end
+
+# this is for no-neighborlist computations
+@kernel forces_kernel(accelerations, coords, force_law)
+    tid = @index(Global, Linear)
+    lid = @index(Local, Linear)
+
+    @inbounds n = size(accelerations)[2]
+
+    FT = eltype(coords)
+
+    @inbounds @uniform gs = @groupsize()[1]
+    temp_acceleration = @localmem FT (gs, 4)
+    temp_position1 = @localmem FT (gs, 4)
+    temp_position2 = @localmem FT (gs, 4)
+
+    for k = 1:n
+        @inbounds temp_acceleration[lid, k] = 0
+        @inbounds temp_position1[lid, k] = coords[tid,k]
+    end
+
+    for j = 1:size(coords)[1]
+        if j != tid
+            for k = 1:n
+                @inbounds temp_position2[lid,k] = coords[j,k]
+            end
+
+            force_law(temp_position1,
+                      temp_position2,
+                      temp_acceleration, lid, n)
+        end
+    end
+
+    for k = 1:n
+        @inbounds accelerations[tid,k] = temp_acceleration[lid,k]
+    end
+end
+
+@kernel forces_kernel(coords, force_law, bitstring, indices)
+    tid = @index(Global, Linear)
+    lid = @index(Local, Linear)
+
+    @inbounds n = size(accelerations)[2]
+
+    FT = eltype(coords)
+
+    @inbounds @uniform gs = @groupsize()[1]
+    temp_acceleration = @localmem FT (gs, 4)
+    temp_position1 = @localmem FT (gs, 4)
+    temp_position2 = @localmem FT (gs, 4)
+
+    for k = 1:n
+        @inbounds temp_acceleration[lid, k] = 0
+        @inbounds temp_position1[lid, k] = coords[tid,k]
+    end
+
+    for j = indices[tid]:indices[tid+1]
+        if j != tid
+            idx = bitstring[j]
+            for k = 1:n
+                @inbounds temp_position2[lid,k] = coords[idx,k]
+            end
+
+            force_law(temp_position1,
+                      temp_position2,
+                      temp_acceleration, lid, n)
+        end
+    end
+
+    for k = 1:n
+        @inbounds accelerations[tid,k] = temp_acceleration[lid,k]
+    end
 end
