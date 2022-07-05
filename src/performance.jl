@@ -97,8 +97,8 @@ function forces!(accelerations,
         kernel!(accelerations, s.coords, force_law,
                 ndrange=length(length(s.coords)))
     else
-        kernel!(accelerations, s.coords, force_law, neighbor.bitstring,
-                neighbor.indices, ndrange=length(length(s.coords)))
+        kernel!(accelerations, s.coords, neighbor.bitstring, neighbor.indices,
+                force_law, ndrange=length(length(s.coords)))
     end
 end
 
@@ -113,22 +113,22 @@ end
 
     @inbounds @uniform gs = @groupsize()[1]
     temp_acceleration = @localmem FT (gs, 4)
-    temp_position1 = @localmem FT (gs, 4)
-    temp_position2 = @localmem FT (gs, 4)
+    temp_coords_1 = @localmem FT (gs, 4)
+    temp_coords_2 = @localmem FT (gs, 4)
 
     for k = 1:n
         @inbounds temp_acceleration[lid, k] = 0
-        @inbounds temp_position1[lid, k] = coords[tid,k]
+        @inbounds temp_coords_1[lid, k] = coords[tid,k]
     end
 
     for j = 1:size(coords)[1]
         if j != tid
             for k = 1:n
-                @inbounds temp_position2[lid,k] = coords[j,k]
+                @inbounds temp_coords_2[lid,k] = coords[j,k]
             end
 
-            force_law(temp_position1,
-                      temp_position2,
+            force_law(temp_coords_1,
+                      temp_coords_2,
                       temp_acceleration, lid, n)
         end
     end
@@ -138,7 +138,7 @@ end
     end
 end
 
-@kernel forces_kernel(coords, force_law, bitstring, indices)
+@kernel forces_kernel(coords, bitstring, indices, force_law)
     tid = @index(Global, Linear)
     lid = @index(Local, Linear)
 
@@ -148,23 +148,23 @@ end
 
     @inbounds @uniform gs = @groupsize()[1]
     temp_acceleration = @localmem FT (gs, 4)
-    temp_position1 = @localmem FT (gs, 4)
-    temp_position2 = @localmem FT (gs, 4)
+    temp_coords_1 = @localmem FT (gs, 4)
+    temp_coords_2 = @localmem FT (gs, 4)
 
     for k = 1:n
         @inbounds temp_acceleration[lid, k] = 0
-        @inbounds temp_position1[lid, k] = coords[tid,k]
+        @inbounds temp_coords_1[lid, k] = coords[tid,k]
     end
 
     for j = indices[tid]:indices[tid+1]
         if j != tid
             idx = bitstring[j]
             for k = 1:n
-                @inbounds temp_position2[lid,k] = coords[idx,k]
+                @inbounds temp_coords_2[lid,k] = coords[idx,k]
             end
 
-            force_law(temp_position1,
-                      temp_position2,
+            force_law(temp_coords_1,
+                      temp_coords_2,
                       temp_acceleration, lid, n)
         end
     end
