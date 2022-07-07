@@ -131,10 +131,13 @@ function simulate!(sys,
                     parallel::Bool=true)
 
     println("startup time:")
+
+    accelerations = CuArray(zeros(size(sys.coords)))
     @time begin
         CUDA.@time neighbors = find_neighbors(sys, sys.neighbor_finder; parallel=parallel)
         CUDA.@time run_loggers!(sys, neighbors, 0; parallel=parallel)
-        CUDA.@time accels_t = accelerations(sys, neighbors; parallel=parallel)
+        CUDA.@time accels_t = forces!(accelerations, sys, neighbors)
+        #CUDA.@time accels_t = accelerations(sys, neighbors; parallel=parallel)
         CUDA.@time accels_t_dt = zero(accels_t)
         CUDA.@time sim.remove_CM_motion && remove_CM_motion!(sys)
     end

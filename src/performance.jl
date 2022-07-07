@@ -1,5 +1,7 @@
 export BitNeighborList, list_to_bitstring
 
+using KernelAbstractions, CUDAKernels
+
 """
     BitNeighborList
 
@@ -84,26 +86,27 @@ function decode_neighborlist(nbs::T, idx_1, idx_2;
 end
 
 function forces!(accelerations,
-                 s::System, neighor::Union{nothing, BitNeighborList},
-                 force_law; numcores = 4; numthreads = 256)
+                 s::System, neighor::Union{Nothing, BitNeighborList},
+                 force; numcores = 4, numthreads = 256)
 
-    if isa(s.coords, SVector) || sia(s.coords, Array)
+    if isa(s.coords, SVector) || isa(s.coords, Array)
         kernel! = forces_kernel(CPU(), numcores)
     else
         kernel! = forces_kernel(CUDADevice(), numthreads)
     end
 
     if neighbor == nothing
-        kernel!(accelerations, s.coords, force_law,
+        kernel!(accelerations, s.coords, force,
                 ndrange=length(length(s.coords)))
     else
         kernel!(accelerations, s.coords, neighbor.bitstring, neighbor.indices,
-                force_law, ndrange=length(length(s.coords)))
+                force, ndrange=length(length(s.coords)))
     end
 end
 
 # this is for no-neighborlist computations
-@kernel forces_kernel(accelerations, coords, force_law)
+@kernel function forces_kernel(accelerations, coords, atoms, velocities, 
+                               interaction, boundary, force)
     tid = @index(Global, Linear)
     lid = @index(Local, Linear)
 
@@ -113,23 +116,16 @@ end
 
     @inbounds @uniform gs = @groupsize()[1]
     temp_acceleration = @localmem FT (gs, 4)
-    temp_coords_1 = @localmem FT (gs, 4)
-    temp_coords_2 = @localmem FT (gs, 4)
 
     for k = 1:n
         @inbounds temp_acceleration[lid, k] = 0
-        @inbounds temp_coords_1[lid, k] = coords[tid,k]
     end
 
     for j = 1:size(coords)[1]
         if j != tid
-            for k = 1:n
-                @inbounds temp_coords_2[lid,k] = coords[j,k]
-            end
-
-            force_law(temp_coords_1,
-                      temp_coords_2,
-                      temp_acceleration, lid, n)
+            dr = vector(coords[tid], coords[j], boundary)
+            force(interaction, dr, coords[tid], coords[j],
+                  atoms[tid], atoms[j], boundary)
         end
     end
 
@@ -138,7 +134,8 @@ end
     end
 end
 
-@kernel forces_kernel(coords, bitstring, indices, force_law)
+@kernel function forces_kernel(coords, atoms, velocities, interation, boundary,
+                               bitstring, indices, force)
     tid = @index(Global, Linear)
     lid = @index(Local, Linear)
 
@@ -148,24 +145,17 @@ end
 
     @inbounds @uniform gs = @groupsize()[1]
     temp_acceleration = @localmem FT (gs, 4)
-    temp_coords_1 = @localmem FT (gs, 4)
-    temp_coords_2 = @localmem FT (gs, 4)
 
     for k = 1:n
         @inbounds temp_acceleration[lid, k] = 0
-        @inbounds temp_coords_1[lid, k] = coords[tid,k]
     end
 
     for j = indices[tid]:indices[tid+1]
         if j != tid
             idx = bitstring[j]
-            for k = 1:n
-                @inbounds temp_coords_2[lid,k] = coords[idx,k]
-            end
-
-            force_law(temp_coords_1,
-                      temp_coords_2,
-                      temp_acceleration, lid, n)
+            dr = vector(coords[tid], coords[idx], boundary)
+            force(interaction, dr, coords[tid], coords[idx],
+                  atoms[tid], atoms[idx], boundary)
         end
     end
 
