@@ -70,6 +70,10 @@ function compress_neighborlist(nl::NeighborList; AT = Array)
     return list_to_bitstring(nl.list)
 end
 
+function compress_neighborlist(n::Nothing; kwargs...)
+    return nothing
+end
+
 # TODO
 function compress_neighborlist(nl::NeighborListVec; AT = Array)
 end
@@ -86,7 +90,7 @@ function decode_neighborlist(nbs::T, idx_1, idx_2;
 end
 
 function forces!(accelerations,
-                 s::System, neighor::Union{Nothing, BitNeighborList},
+                 s::System, neighbor::Union{Nothing, BitNeighborList},
                  force; numcores = 4, numthreads = 256)
 
     if isa(s.coords, SVector) || isa(s.coords, Array)
@@ -96,10 +100,13 @@ function forces!(accelerations,
     end
 
     if neighbor == nothing
-        kernel!(accelerations, s.coords, force,
+        kernel!(accelerations, s.coords, s.atoms, s.velocities,
+                s.pairwise_inters, s.boundary, force,
                 ndrange=length(length(s.coords)))
     else
-        kernel!(accelerations, s.coords, neighbor.bitstring, neighbor.indices,
+        kernel!(accelerations, s.coords, s.atoms, s.velocities,
+                s.pairwise_inters, s.boundary, force,
+                neighbor.bitstring, neighbor.indices,
                 force, ndrange=length(length(s.coords)))
     end
 end
