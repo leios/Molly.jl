@@ -132,8 +132,14 @@ function simulate!(sys,
 
     println("startup time:")
 
-    accels_t = CuArray(zeros(size(sys.coords)))
+    AT = Array
+    if isa(sys.coords, CuArray)
+        AT = CuArray
+    end
+
+    accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
     @time begin
+        #CUDA.@time neighbors = find_neighbors(sys, sys.neighbor_finder; parallel=parallel)
         CUDA.@time neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder; parallel=parallel))
         CUDA.@time run_loggers!(sys, neighbors, 0; parallel=parallel)
         CUDA.@time wait(forces!(accels_t, sys, neighbors, force))

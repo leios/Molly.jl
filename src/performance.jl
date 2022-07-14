@@ -10,7 +10,7 @@ For this, the Neighborlist is stored as a bitstring in a "list of lists" format.
 Each particle will have it's list concatenated with all other particles.
 The Indices are the offset index within the NeighborBitString for each particle.
 
-Note that BitArrays are not available on the GPU, so we use a CuArray{UInt8}.
+Note that BitArrays are not available on the GPU, so we use a (Cu)Array{UInt8}.
 """
 
 struct BitNeighborList
@@ -119,10 +119,10 @@ end
 
     @inbounds n = size(accelerations)[2]
 
-    FT = eltype(coords)
+    @uniform FT = eltype(coords[1])
 
-    @inbounds @uniform gs = @groupsize()[1]
-    temp_acceleration = @localmem FT (gs, 4)
+    gs = @groupsize()[1]
+    temp_acceleration = @localmem FT (@groupsize()[1], 4)
 
     for k = 1:n
         @inbounds temp_acceleration[lid, k] = 0
@@ -131,7 +131,7 @@ end
     for j = 1:size(coords)[1]
         if j != tid
             dr = vector(coords[tid], coords[j], boundary)
-            force(interaction, dr, coords[tid], coords[j],
+            force(interaction[tid], dr, coords[tid], coords[j],
                   atoms[tid], atoms[j], boundary)
         end
     end
@@ -148,10 +148,10 @@ end
 
     @inbounds n = size(accelerations)[2]
 
-    FT = eltype(coords)
+    FT = eltype(coords[1])
 
-    @inbounds @uniform gs = @groupsize()[1]
-    temp_acceleration = @localmem FT (gs, 4)
+    gs = @groupsize()[1]
+    temp_acceleration = @localmem FT (@groupsize()[1], 4)
 
     for k = 1:n
         @inbounds temp_acceleration[lid, k] = 0
