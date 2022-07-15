@@ -126,38 +126,36 @@ function VelocityVerlet(; dt, coupling=NoCoupling(), remove_CM_motion=true)
 end
 
 function simulate!(sys,
-                    sim::VelocityVerlet,
-                    n_steps::Integer;
-                    parallel::Bool=true)
-
-    println("startup time:")
+                   sim::VelocityVerlet,
+                   n_steps::Integer;
+                   parallel::Bool=true)
 
     AT = Array
     if isa(sys.coords, CuArray)
         AT = CuArray
     end
 
-    accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
-    @time begin
-        #CUDA.@time neighbors = find_neighbors(sys, sys.neighbor_finder; parallel=parallel)
-        CUDA.@time neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder; parallel=parallel))
-        CUDA.@time run_loggers!(sys, neighbors, 0; parallel=parallel)
-        CUDA.@time wait(forces!(accels_t, sys, neighbors, force))
-        #CUDA.@time accels_t = accelerations(sys, neighbors; parallel=parallel)
-        CUDA.@time accels_t_dt = zero(accels_t)
-        CUDA.@time sim.remove_CM_motion && remove_CM_motion!(sys)
-    end
+    #accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
+    accels_t = AT(zero(sys.coords))
+
+    println(typeof(accels_t))
+
+    neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder; parallel=parallel))
+    run_loggers!(sys, neighbors, 0; parallel=parallel)
+    @time wait(forces!(accels_t, sys, neighbors, force))
+    accels_t_dt = AT(zero(accels_t))
+    sim.remove_CM_motion && remove_CM_motion!(sys)
 
 #=
     for step_n in 1:n_steps
         println("step time:")
         @time begin
-            sys.coords += sys.velocities .* sim.dt .+ (remove_molar.(accels_t) .* sim.dt ^ 2) ./ 2
-            sys.coords = wrap_coords_vec.(sys.coords, (sys.box_size,))
+            sys.coords += sys.velocities .* sim.dt #.+ (remove_molar.(accels_t) .* sim.dt ^ 2) ./ 2
+            sys.coords = wrap_coords_vec.(sys.coords, (sys.boundary,))
         end
 
         println("acc time:")
-        @time accels_t_dt .= accelerations(sys, neighbors; parallel=parallel)
+        @time wait(forces!(accels_t_dt, sys, neighbors))
 
         println("stormer verlet time:")
         @time sys.velocities += remove_molar.(accels_t .+ accels_t_dt) .* sim.dt / 2
@@ -171,8 +169,10 @@ function simulate!(sys,
         end
 
         if step_n != n_steps
-            neighbors = find_neighbors(sys, sys.neighbor_finder, neighbors, step_n;
-                                        parallel=parallel)
+            neighbors = find_neighbors(sys, sys.neighbor_finder,
+                                       neighbors, step_n;
+                                       parallel=parallel))
+            neighbors = compress_neighborlist(neighbors)
             accels_t = accels_t_dt
         end
     end

@@ -99,51 +99,50 @@ function forces!(accelerations,
         kernel! = forces_kernel(CUDADevice(), numthreads)
     end
 
+    N = length(accelerations[1])
+
     if neighbor == nothing
         kernel!(accelerations, s.coords, s.atoms, s.velocities,
-                s.pairwise_inters, s.boundary, force,
+                s.pairwise_inters, s.boundary, force, N,
                 ndrange=length(length(s.coords)))
     else
         kernel!(accelerations, s.coords, s.atoms, s.velocities,
-                s.pairwise_inters, s.boundary, force,
+                s.pairwise_inters, s.boundary,
                 neighbor.bitstring, neighbor.indices,
-                force, ndrange=length(length(s.coords)))
+                force, N, ndrange=length(length(s.coords)))
     end
 end
 
 # this is for no-neighborlist computations
 @kernel function forces_kernel(accelerations, coords, atoms, velocities, 
-                               interaction, boundary, force)
+                               interaction, boundary, force, @Const(N))
     tid = @index(Global, Linear)
     lid = @index(Local, Linear)
-
-    @inbounds n = size(accelerations)[2]
 
     @uniform FT = eltype(coords[1])
 
     gs = @groupsize()[1]
-    temp_acceleration = @localmem FT (@groupsize()[1], 4)
+    temp_acceleration = @localmem SVector{2, FT} (@groupsize()[1],)
 
-    for k = 1:n
-        @inbounds temp_acceleration[lid, k] = 0
+    for k = 1:N
+        @inbounds temp_acceleration[lid] = SVector((0,0))
     end
 
     for j = 1:size(coords)[1]
         if j != tid
             dr = vector(coords[tid], coords[j], boundary)
-            temp_acceleration[lid, :] = force(interaction[tid], dr,
-                                              coords[tid], coords[j],
-                                              atoms[tid], atoms[j], boundary)
+            temp_acceleration[lid] = temp_acceleration[lid] .+
+                                      force(interaction[tid], dr,
+                                            coords[tid], coords[j],
+                                            atoms[tid], atoms[j], boundary)
         end
     end
 
-    for k = 1:n
-        @inbounds accelerations[tid,k] = temp_acceleration[lid,k]
-    end
+    @inbounds accelerations[tid] = temp_acceleration[lid]
 end
 
 @kernel function forces_kernel(coords, atoms, velocities, interation, boundary,
-                               bitstring, indices, force)
+                               bitstring, indices, force, N)
     tid = @index(Global, Linear)
     lid = @index(Local, Linear)
 
