@@ -131,8 +131,9 @@ end
     for j = 1:size(coords)[1]
         if j != tid
             dr = vector(coords[tid], coords[j], boundary)
-            force(interaction[tid], dr, coords[tid], coords[j],
-                  atoms[tid], atoms[j], boundary)
+            temp_acceleration[lid, :] = force(interaction[tid], dr,
+                                              coords[tid], coords[j],
+                                              atoms[tid], atoms[j], boundary)
         end
     end
 
