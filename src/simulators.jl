@@ -138,14 +138,15 @@ function simulate!(sys,
     end
 
     accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
+    println(typeof(accels_t))
     @time begin
         #CUDA.@time neighbors = find_neighbors(sys, sys.neighbor_finder; parallel=parallel)
-        CUDA.@time neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder; parallel=parallel))
-        CUDA.@time run_loggers!(sys, neighbors, 0; parallel=parallel)
+        neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder; parallel=parallel))
+        run_loggers!(sys, neighbors, 0; parallel=parallel)
         CUDA.@time wait(forces!(accels_t, sys, neighbors, force))
         #CUDA.@time accels_t = accelerations(sys, neighbors; parallel=parallel)
-        CUDA.@time accels_t_dt = zero(accels_t)
-        CUDA.@time sim.remove_CM_motion && remove_CM_motion!(sys)
+        accels_t_dt = zero(accels_t)
+        sim.remove_CM_motion && remove_CM_motion!(sys)
     end
 
 #=
