@@ -141,8 +141,8 @@ function simulate!(sys,
     #accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
     accels_t = AT(zero(sys.coords))
 
-    neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder; parallel=parallel))
-    run_loggers!(sys, neighbors, 0; parallel=parallel)
+    neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder))
+    run_loggers!(sys, neighbors, 0; n_threads=n_threads)
     #accels_t = accelerations(sys, neighbors)
     wait(forces!(accels_t, sys, neighbors, force))
     accels_t_dt = AT(zero(accels_t))
