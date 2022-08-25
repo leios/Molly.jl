@@ -15,7 +15,7 @@ Parallel(; nl_only=false) = parallel(nl_only)
     return SVector((0.1, 0.1))
 end
 
-#@testset "Parallel Precision" begin
+@testset "Parallel Precision" begin
     atoms = [Atom(mass=1.0), Atom(mass=1.00)]
     coords = [SVector(0.3, 0.5), SVector(0.7, 0.5)]
     velocities = [SVector(0.0, 0.0), SVector(0.0, 0.0)]
@@ -40,4 +40,4 @@ end
     @test isapprox(vector(coords[1], coords[2], boundary),
                    vector(sys.coords[1], sys.coords[2], boundary))
 
-#end
+end
