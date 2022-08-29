@@ -1,6 +1,12 @@
 export BitNeighborList, list_to_bitstring
 
-using KernelAbstractions, CUDAKernels
+using KernelAbstractions
+
+if has_cuda_gpu()
+    using CUDAKernels
+elseif has_rocm_gpu()
+    using ROCKernels
+end
 
 """
     BitNeighborList
@@ -14,8 +20,13 @@ Note that BitArrays are not available on the GPU, so we use a (Cu)Array{UInt8}.
 """
 
 struct BitNeighborList
-    bitstring::T where T <: Union{BitArray, Array{UInt8}, CuArray{UInt8}}
-    indices::U where U <: Union{Array{UI}, CuArray{UI}} where UI <: Unsigned
+    bitstring::T where T <: Union{BitArray,
+                                  Array{UInt8},
+                                  CuArray{UInt8},
+                                  ROCArray{UInt8}}
+    indices::U where U <: Union{Array{UI},
+                                CuArray{UI},
+                                ROCArray{UI}} where UI <: Unsigned
 end
 
 # This function will take a list of lists and convert it into a vector of UInt8
@@ -95,8 +106,10 @@ function forces!(accelerations,
 
     if isa(s.coords, SVector) || isa(s.coords, Array)
         kernel! = forces_kernel(CPU(), numcores)
-    else
+    elseif isa(s.coords, CuArray)
         kernel! = forces_kernel(CUDADevice(), numthreads)
+    elseif isa(s.coords, ROCArray)
+        kernel! = forces_kernel(ROCDevice(), numthreads)
     end
 
     if neighbor == nothing
