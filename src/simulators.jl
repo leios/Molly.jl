@@ -128,9 +128,10 @@ function VelocityVerlet(; dt, coupling=NoCoupling(), remove_CM_motion=true)
 end
 
 function simulate!(sys,
-                    sim::VelocityVerlet,
-                    n_steps::Integer;
-                    n_threads::Integer=Threads.nthreads())
+                   sim::VelocityVerlet,
+                   n_steps::Integer;
+                   n_threads::Integer=Threads.nthreads(),
+                   kernel_type = :default)
     sys.coords = wrap_coords.(sys.coords, (sys.boundary,))
 
     AT = Array
@@ -146,7 +147,7 @@ function simulate!(sys,
     neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder))
     run_loggers!(sys, neighbors, 0; n_threads=n_threads)
     #accels_t = accelerations(sys, neighbors)
-    wait(forces!(accels_t, sys, neighbors, force))
+    wait(forces!(accels_t, sys, neighbors, force; kernel_type = kernel_type))
     accels_t_dt = AT(zero(accels_t))
 
     for step_n in 1:n_steps
@@ -157,7 +158,8 @@ function simulate!(sys,
         sys.coords = wrap_coords.(sys.coords, (sys.boundary,))
 
         #accels_t_dt = accelerations(sys, neighbors; n_threads=n_threads)
-        wait(forces!(accels_t_dt, sys, neighbors, force))
+        wait(forces!(accels_t_dt, sys, neighbors, force;
+                     kernel_type = kernel_type))
         #println(accels_t_dt)
 
         sys.velocities += remove_molar.(accels_t .+ accels_t_dt) .* sim.dt / 2

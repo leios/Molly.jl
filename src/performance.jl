@@ -102,14 +102,32 @@ end
 
 function forces!(accelerations,
                  s::System, neighbor::Union{Nothing, BitNeighborList},
-                 force; numcores = 4, numthreads = 256)
+                 force; numcores = 4, numthreads = 256,
+                 kernel_type = :default)
+
+    # setting defaults if kernel_type is not specified
+    if kernel_type == :default
+        if isa(s.coords, Array)
+            kernel_fx = CPU_forces_kernel
+        elseif isa(s.coords, CuArray) || isa(s.coords, ROCArray)
+            kernel_fx = CPU_forces_kernel
+        else
+            error("Kernel type ", string(kernel_type), " not found!")
+        end
+    else
+        if (kernel_type == :CPU) || (kernel_type == :CPU_forces_kernel)
+            kernel_fx = CPU_forces_kernel
+        else
+            error("Kernel type ", string(kernel_type), " not found!")
+        end
+    end
 
     if isa(s.coords, SVector) || isa(s.coords, Array)
-        kernel! = forces_kernel(CPU(), numcores)
+        kernel! = kernel_fx(CPU(), numcores)
     elseif isa(s.coords, CuArray)
-        kernel! = forces_kernel(CUDADevice(), numthreads)
+        kernel! = kernel_fx(CUDADevice(), numthreads)
     elseif isa(s.coords, ROCArray)
-        kernel! = forces_kernel(ROCDevice(), numthreads)
+        kernel! = kernel_fx(ROCDevice(), numthreads)
     end
 
     if neighbor == nothing
@@ -125,8 +143,9 @@ function forces!(accelerations,
 end
 
 # this is for no-neighborlist computations
-@kernel function forces_kernel(accelerations, coords, atoms, velocities, 
-                               interaction, boundary, force_units, force)
+# CPU forces kernels are direct ports of what is currently available in Molly
+@kernel function CPU_forces_kernel(accelerations, coords, atoms, velocities, 
+                                   interaction, boundary, force_units, force)
     tid = @index(Global, Linear)
 
     dim = length(coords[1])
@@ -151,7 +170,7 @@ end
 end
 
 #=
-@kernel function forces_kernel(coords, atoms, velocities, interation, boundary,
+@kernel function CPU_forces_kernel(coords, atoms, velocities, interation, boundary,
                                bitstring, indices, force)
     tid = @index(Global, Linear)
     lid = @index(Local, Linear)
