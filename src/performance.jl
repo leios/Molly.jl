@@ -148,6 +148,48 @@ end
                                    interaction, boundary, force_units, force)
     tid = @index(Global, Linear)
 
+    dims = length(coords[1])
+
+    if dims == 2
+        temp_acceleration = SVector((0.0,0.0))
+    elseif dims == 3
+        temp_acceleration = SVector((0.0,0.0,0.0))
+    elseif dims == 1
+        temp_acceleration = 0.0
+    end
+
+    for j = 1:length(coords)
+        if j != tid && tid < length(coords)
+            dr = vector(coords[tid], coords[j], boundary)
+            r2 = sum(abs2, dr)
+
+            mi, mj = atoms[tid].mass, atoms[j].mass
+            f = (-interaction.G) #/ sqrt(r2 ^ 3)
+            temp_acceleration = temp_acceleration .- f.*dr
+#=
+            fdr = force(interaction, dr, coords[tid], coords[j],
+                        atoms[tid], atoms[j], boundary)
+            check_force_units(fdr, force_units)
+            fdr_ustrip = ustrip.(fdr)
+=#
+
+#=
+            temp_acceleration = temp_acceleration #.- fdr_ustrip
+                                force(interaction, dr,
+                                      coords[tid], coords[j],
+                                      atoms[tid], atoms[j], boundary)
+=#
+        end
+    end
+
+    @inbounds accelerations[tid] = force_units * temp_acceleration
+end
+
+# this is for no-neighborlist computations
+@kernel function simple_forces_kernel(accelerations, coords, atoms, velocities, 
+                                      interaction, boundary, force_units, force)
+    tid = @index(Global, Linear)
+
     dim = length(coords[1])
 
     if dim == 2

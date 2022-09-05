@@ -26,13 +26,16 @@ Gravity(; G=Unitful.G, nl_only=false) = Gravity{typeof(G)}(G, nl_only)
     r2 = sum(abs2, dr)
 
     mi, mj = atom_i.mass, atom_j.mass
+    f = (-inter.G) #/ √(r2 ^ 3)
+#=
     params = (inter.G, mi, mj)
 
     f = force_divr_nocutoff(inter, r2, inv(r2), params)
+=#
     return f * dr
 end
 
-@fastmath function force_divr_nocutoff(::Gravity, r2, invr2, (G, mi, mj))
+function force_divr_nocutoff(::Gravity, r2, invr2, (G, mi, mj))
     (-G * mi * mj) / √(r2 ^ 3)
 end
 
