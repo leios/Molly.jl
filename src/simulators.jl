@@ -142,7 +142,7 @@ function simulate!(sys,
     end
 
     #accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
-    accels_t = AT(zero(sys.coords))
+    accels_t = AT(zero(sys.coords))*1u"s^(-2)"
 
     neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder))
     run_loggers!(sys, neighbors, 0; n_threads=n_threads)
@@ -157,10 +157,10 @@ function simulate!(sys,
         apply_constraints!(sys, old_coords, sim.dt)
         sys.coords = wrap_coords.(sys.coords, (sys.boundary,))
 
-        #accels_t_dt = accelerations(sys, neighbors; n_threads=n_threads)
-        wait(forces!(accels_t_dt, sys, neighbors, force;
+        #@time accels_t_dt = accelerations(sys, neighbors; n_threads=n_threads)
+        @time wait(forces!(accels_t_dt, sys, neighbors, force;
                      kernel_type = kernel_type))
-        #println(accels_t_dt)
+        #println(accels_t_dt, '\n', accels_t)
 
         sys.velocities += remove_molar.(accels_t .+ accels_t_dt) .* sim.dt / 2
 
@@ -174,7 +174,7 @@ function simulate!(sys,
                                        neighbors, step_n;
                                        n_threads=n_threads)
             neighbors = compress_neighborlist(neighbors)
-            accels_t = accels_t_dt
+            accels_t .= accels_t_dt
         end
     end
 

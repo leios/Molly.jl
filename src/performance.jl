@@ -108,15 +108,15 @@ function forces!(accelerations,
     # setting defaults if kernel_type is not specified
     if kernel_type == :default
         if isa(s.coords, Array)
-            kernel_fx = CPU_forces_kernel
+            kernel_fx = simple_forces_kernel
         elseif isa(s.coords, CuArray) || isa(s.coords, ROCArray)
-            kernel_fx = CPU_forces_kernel
+            kernel_fx = simple_forces_kernel
         else
             error("Kernel type ", string(kernel_type), " not found!")
         end
     else
         if (kernel_type == :CPU) || (kernel_type == :CPU_forces_kernel)
-            kernel_fx = CPU_forces_kernel
+            kernel_fx = simple_forces_kernel
         else
             error("Kernel type ", string(kernel_type), " not found!")
         end
@@ -131,9 +131,15 @@ function forces!(accelerations,
     end
 
     if neighbor == nothing
-        kernel!(accelerations, s.coords, s.atoms, s.velocities,
-                s.pairwise_inters[1], s.boundary, s.force_units, force,
-                ndrange=length(s.coords))
+        if s.force_units == Unitful.FreeUnits
+            kernel!(accelerations, s.coords, s.atoms, s.velocities,
+                    s.pairwise_inters[1], s.boundary, force,
+                    ndrange=length(s.coords))
+        else
+            kernel!(accelerations, s.coords, s.atoms, s.velocities,
+                    s.pairwise_inters[1], s.boundary, s.force_units, force,
+                    ndrange=length(s.coords))
+        end
     else
         kernel!(accelerations, s.coords, s.atoms, s.velocities,
                 s.pairwise_inters[1], s.boundary,
@@ -142,47 +148,30 @@ function forces!(accelerations,
     end
 end
 
-# this is for no-neighborlist computations
-# CPU forces kernels are direct ports of what is currently available in Molly
-@kernel function CPU_forces_kernel(accelerations, coords, atoms, velocities, 
-                                   interaction, boundary, force_units, force)
+@kernel function simple_forces_kernel(accelerations, coords, atoms, velocities, 
+                                      interaction, boundary, force)
     tid = @index(Global, Linear)
 
-    dims = length(coords[1])
+    dim = length(coords[1])
 
-    if dims == 2
+    if dim == 2
         temp_acceleration = SVector((0.0,0.0))
-    elseif dims == 3
+    elseif dim == 3
         temp_acceleration = SVector((0.0,0.0,0.0))
-    elseif dims == 1
-        temp_acceleration = 0.0
     end
 
     for j = 1:length(coords)
-        if j != tid && tid < length(coords)
+        if j != tid
             dr = vector(coords[tid], coords[j], boundary)
-            r2 = sum(abs2, dr)
-
-            mi, mj = atoms[tid].mass, atoms[j].mass
-            f = (-interaction.G) #/ sqrt(r2 ^ 3)
-            temp_acceleration = temp_acceleration .- f.*dr
-#=
-            fdr = force(interaction, dr, coords[tid], coords[j],
-                        atoms[tid], atoms[j], boundary)
-            check_force_units(fdr, force_units)
-            fdr_ustrip = ustrip.(fdr)
-=#
-
-#=
-            temp_acceleration = temp_acceleration #.- fdr_ustrip
+            temp_acceleration = temp_acceleration .- 
                                 force(interaction, dr,
                                       coords[tid], coords[j],
-                                      atoms[tid], atoms[j], boundary)
-=#
+                                      atoms[tid], atoms[j],
+                                      boundary)
         end
     end
 
-    @inbounds accelerations[tid] = force_units * temp_acceleration
+    @inbounds accelerations[tid] = temp_acceleration ./ atoms[tid].mass
 end
 
 # this is for no-neighborlist computations
@@ -201,14 +190,16 @@ end
     for j = 1:length(coords)
         if j != tid
             dr = vector(coords[tid], coords[j], boundary)
-            temp_acceleration = temp_acceleration .- 
-                                force(interaction, dr,
-                                      coords[tid], coords[j],
-                                      atoms[tid], atoms[j], boundary)
+            fdr = force(interaction, dr, coords[tid], coords[j],
+                        atoms[tid], atoms[j], boundary)
+            check_force_units(fdr, force_units)
+            fdr_ustrip = ustrip.(fdr)
+            temp_acceleration = temp_acceleration .- fdr_ustrip
         end
     end
 
-    @inbounds accelerations[tid] = force_units * temp_acceleration
+    @inbounds accelerations[tid] = force_units * temp_acceleration ./
+                                   atoms[tid].mass
 end
 
 #=
