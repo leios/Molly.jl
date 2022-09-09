@@ -142,7 +142,11 @@ function simulate!(sys,
     end
 
     #accels_t = AT(zeros(length(sys.coords), length(sys.coords[1])))
-    accels_t = AT(zero(sys.coords))*1u"s^(-2)"
+    if sys.force_units == Unitful.NoUnits
+        accels_t = AT(zero(sys.coords))
+    else
+        accels_t = AT(zero(sys.coords)*1.0u"s^-2")
+    end
 
     neighbors = compress_neighborlist(find_neighbors(sys, sys.neighbor_finder))
     run_loggers!(sys, neighbors, 0; n_threads=n_threads)

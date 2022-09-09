@@ -131,7 +131,7 @@ function forces!(accelerations,
     end
 
     if neighbor == nothing
-        if s.force_units == Unitful.FreeUnits
+        if s.force_units == Unitful.NoUnits
             kernel!(accelerations, s.coords, s.atoms, s.velocities,
                     s.pairwise_inters[1], s.boundary, force,
                     ndrange=length(s.coords))
