@@ -565,7 +565,7 @@ function ImplicitSolventGBN2(atoms::AbstractArray{Atom{T, M, D, E}},
     end
 
     if isa(atoms, AbstractGPUArray)
-        ArrayType = fine_array_type(atoms)
+        ArrayType = get_array_type(atoms)
         or = ArrayType(offset_radii)
         sor = ArrayType(scaled_offset_radii)
         is, js = ArrayType(inds_i), ArrayType(inds_j)

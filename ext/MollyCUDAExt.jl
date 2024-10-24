@@ -4,6 +4,7 @@ using Molly
 using CUDA
 using ChainRulesCore
 using Atomix
+using KernelAbstractions
 
 CUDA.Const(nl::Molly.NoNeighborList) = nl
 
@@ -38,12 +39,12 @@ function cuda_threads_blocks_specific(n_inters)
     return n_threads_gpu, n_blocks
 end
 
-function pairwise_force_gpu(coords::CuArray{SVector{D, C}}, atoms, boundary,
+function Molly.pairwise_force_gpu(coords::CuArray{SVector{D, C}}, atoms, boundary,
                             pairwise_inters, nbs, force_units, ::Val{T}) where {D, C, T}
     fs_mat = CUDA.zeros(T, D, length(atoms))
 
-    if typeof(nbs) == NoNeighborList
-        kernel = @cuda launch=false pairwise_force_kernel_nonl!(
+    if typeof(nbs) == Molly.NoNeighborList
+        kernel = @cuda launch=false cuda_pairwise_force_kernel_nonl!(
             fs_mat, coords, atoms, boundary, pairwise_inters, Val(D), Val(force_units))
         conf = launch_configuration(kernel.fun)
         threads_basic = parse(Int, get(ENV, "MOLLY_GPUNTHREADS_PAIRWISE", "512"))
@@ -54,31 +55,13 @@ function pairwise_force_gpu(coords::CuArray{SVector{D, C}}, atoms, boundary,
         kernel(fs_mat, coords, atoms, boundary, pairwise_inters, Val(D), Val(force_units);
             threads=nthreads, blocks=(n_blocks_i, n_blocks_j))
     else
-        n_threads_gpu, n_blocks = cuda_threads_blocks_pairwise(length(nbs))
-        CUDA.@sync @cuda threads=n_threads_gpu blocks=n_blocks pairwise_force_kernel_nl!(
-                fs_mat, coords, atoms, boundary, pairwise_inters, nbs, Val(D), Val(force_units))
+        backend = get_backend(coords)
+        n_threads_gpu = Molly.gpu_threads_blocks_pairwise(length(nbs))
+        kernel! = Molly.pairwise_force_kernel!(backend, n_threads_gpu)
+        kernel!(fs_mat, coords, atoms, boundary, pairwise_inters, nbs,
+                Val(D), Val(force_units), ndrange = length(nbs))
     end
     return fs_mat
-end
-
-function pairwise_force_kernel_nl!(forces, coords_var, atoms_var, boundary, inters,
-                                neighbors_var, ::Val{D}, ::Val{F}) where {D, F}
-    coords = CUDA.Const(coords_var)
-    atoms = CUDA.Const(atoms_var)
-    neighbors = CUDA.Const(neighbors_var)
-
-    inter_i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-
-    @inbounds if inter_i <= length(neighbors)
-        i, j, special = neighbors[inter_i]
-        f = sum_pairwise_forces(inters, coords[i], coords[j], atoms[i], atoms[j], boundary, special, Val(F))
-        for dim in 1:D
-            fval = ustrip(f[dim])
-            Atomix.@atomic :monotonic forces[dim, i] += -fval
-            Atomix.@atomic :monotonic forces[dim, j] +=  fval
-        end
-    end
-    return nothing
 end
 
 #=
@@ -121,7 +104,7 @@ That's why the calculations are done in the following order:
     h | 1 2 3 4 5 6
 ```
 =#
-function pairwise_force_kernel_nonl!(forces::CuArray{T}, coords_var, atoms_var, boundary, inters,
+function cuda_pairwise_force_kernel_nonl!(forces::AbstractArray{T}, coords_var, atoms_var, boundary, inters,
                                      ::Val{D}, ::Val{F}) where {T, D, F}
     coords = CUDA.Const(coords_var)
     atoms = CUDA.Const(atoms_var)
@@ -147,7 +130,7 @@ function pairwise_force_kernel_nonl!(forces::CuArray{T}, coords_var, atoms_var, 
                 j = j_0_tile + del_j
                 if i != j
                     atom_j, coord_j = atoms[j], coords[j]
-                    f = sum_pairwise_forces(inters, coord_i, coord_j, atom_i, atom_j, boundary, false, Val(F))
+                    f = Molly.sum_pairwise_forces(inters, coord_i, coord_j, atom_i, atom_j, boundary, false, Val(F))
                     for dim in 1:D
                         forces_shmem[dim, tidx] += -ustrip(f[dim])
                     end
@@ -171,9 +154,9 @@ function pairwise_force_kernel_nonl!(forces::CuArray{T}, coords_var, atoms_var, 
         @inbounds for _ in 1:tilesteps
             sync_warp()
             atom_j = atoms[j]
-            f = sum_pairwise_forces(inters, coord_i, coord_j, atom_i, atom_j, boundary, false, Val(F))
+            f = Molly.sum_pairwise_forces(inters, coord_i, coord_j, atom_i, atom_j, boundary, false, Val(F))
             for dim in 1:D
-                forces_shmem[dim, tidx] += -ustrip(f[dim])
+                forces_shmem[dim, tidx] += -Molly.ustrip(f[dim])
             end
             @shfl_multiple_sync(FULL_MASK, laneid() + 1, warpsize(), j, coord_j)
         end

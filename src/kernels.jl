@@ -53,8 +53,8 @@ end
         f = sum_pairwise_forces(inters, coords[i], coords[j], atoms[i], atoms[j], boundary, special, Val(F))
         for dim in 1:D
             fval = ustrip(f[dim])
-            Atomix.@atomic forces[dim, i] = forces[dim, i] - fval
-            Atomix.@atomic forces[dim, j] = forces[dim, j] + fval
+            Atomix.@atomic :monotonic forces[dim, i] -= fval
+            Atomix.@atomic :monotonic forces[dim, j] += fval
         end
     end
 end
